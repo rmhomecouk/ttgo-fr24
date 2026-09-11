@@ -19,9 +19,6 @@ And the same thing on the bench, in a printed case:
 | --- | --- | --- |
 | ![Overview page on the device](docs/photo-overview.jpg) | ![Nearest page on the device](docs/photo-nearest.jpg) | ![Radar page on the device](docs/photo-radar.jpg) |
 
-The photographs are worth having next to the render: the panel's black is not
-black. See [Case](#case) for why.
-
 Three pages, changed with the two on-board buttons:
 
 | Page | Shows |
