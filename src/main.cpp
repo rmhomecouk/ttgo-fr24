@@ -4,6 +4,9 @@
 #include <lvgl.h>
 #include "secrets.h"
 #include "config.h"
+#include "settings.h"
+#include "suntime.h"
+#include "webpanel.h"
 #include "ui.h"
 
 // TTGO T-Display onboard buttons
@@ -53,7 +56,7 @@ static Aircraft *findOrCreate(const char *hex) {
 static void pruneStale() {
   uint32_t now = millis();
   for (int i = 0; i < MAX_AC; i++) {
-    if (fleet[i].used && now - fleet[i].lastSeen > AIRCRAFT_STALE_MS) fleet[i] = Aircraft();
+    if (fleet[i].used && now - fleet[i].lastSeen > settings.aircraftStaleMs) fleet[i] = Aircraft();
   }
 }
 
@@ -160,14 +163,14 @@ static void ensureFeed() {
   // receiver goes away, but this end keeps reporting connected because it
   // only ever reads and a dead peer is invisible until you write. Silence
   // past the threshold is the one symptom we get, so act on it.
-  if (feed.connected() && millis() - lastRxMs > FEED_SILENCE_MS) {
+  if (feed.connected() && millis() - lastRxMs > settings.feedSilenceMs) {
     feed.stop();
   }
 
   if (feed.connected()) return;
 
   uint32_t now = millis();
-  if (now - lastConnectAttempt < FEED_RECONNECT_MS) return;
+  if (now - lastConnectAttempt < settings.feedReconnectMs) return;
   lastConnectAttempt = now;
 
   if (feed.connect(RECEIVER_HOST, RECEIVER_PORT)) {
@@ -224,7 +227,7 @@ static void tickRate() {
 
 // ---------- fleet -> ui_model_t ----------
 
-static ui_model_t model;
+ui_model_t model;   // extern'd by webpanel.cpp for the stats endpoint
 
 static void buildModel() {
   memset(&model, 0, sizeof(model));
@@ -265,7 +268,7 @@ static void buildModel() {
   model.uptimeS = (millis() - bootMs) / 1000;
   model.msgTotal = msgCount;
   model.msgRate = rateHist[UI_RATE_N - 1];
-  model.scopeNm = SCOPE_RANGE_NM;
+  model.scopeNm = settings.scopeRangeNm;
   memcpy(model.rateHist, rateHist, UI_RATE_N);
 }
 
@@ -293,7 +296,7 @@ static void handleButtons() {
   if (pressed) {
     lastBtnMs = now;
     lastPageChange = now;
-    manualUntil = now + MANUAL_HOLD_MS;   // you drive for a while
+    manualUntil = now + settings.manualHoldMs;   // you drive for a while
   }
 
   lastNext = nextNow;
@@ -313,18 +316,21 @@ static void updatePaging() {
 
   if ((int32_t)(manualUntil - now) > 0) return;   // hands off, user is driving
 
-#if PRIORITY_ENABLE
   // Latch onto the Nearest page while something is close, and hold it there
   // until the contact has moved a clear margin back out -- otherwise an
   // aircraft sitting on the boundary flaps the page every update.
   static bool latched = false;
-  float nm = nearestRangeNm();
+  if (settings.priorityEnable) {
+    float nm = nearestRangeNm();
 
-  if (nm < 0) {
-    latched = false;
-  } else if (!latched && nm <= PRIORITY_RANGE_NM) {
-    latched = true;
-  } else if (latched && nm > PRIORITY_RANGE_NM + PRIORITY_HYST_NM) {
+    if (nm < 0) {
+      latched = false;
+    } else if (!latched && nm <= settings.priorityRangeNm) {
+      latched = true;
+    } else if (latched && nm > settings.priorityRangeNm + settings.priorityHystNm) {
+      latched = false;
+    }
+  } else {
     latched = false;
   }
 
@@ -335,14 +341,11 @@ static void updatePaging() {
     }
     return;
   }
-#endif
 
-#if AUTO_CYCLE
-  if (now - lastPageChange >= PAGE_DWELL_MS) {
+  if (settings.autoCycle && now - lastPageChange >= settings.pageDwellMs) {
     ui_page_next();
     lastPageChange = now;
   }
-#endif
 }
 
 // ---------- setup / loop ----------
@@ -351,14 +354,15 @@ void setup() {
   Serial.begin(115200);
   bootMs = millis();
 
+  settings_load();
+
   pinMode(BTN_NEXT, INPUT_PULLUP);
   pinMode(BTN_PREV, INPUT);
 
   tft.init();
   tft.setRotation(1);           // landscape, 240x135
   tft.fillScreen(TFT_BLACK);
-  pinMode(TFT_BL, OUTPUT);
-  digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
+  suntime_init();                // PWM backlight, full brightness until update() decides
 
   lv_init();
   lv_disp_draw_buf_init(&drawBuf, lvBuf, NULL, 240 * 40);
@@ -376,6 +380,8 @@ void setup() {
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+  webpanel_begin();
 }
 
 void loop() {
@@ -384,6 +390,8 @@ void loop() {
   pruneStale();
   tickRate();
   handleButtons();
+  suntime_update();    // internally throttled to once/30s
+  webpanel_handle();
 
   static uint32_t lastUi = 0;
   if (millis() - lastUi > 250) {

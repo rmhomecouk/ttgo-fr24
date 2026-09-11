@@ -56,4 +56,18 @@
  * a few pixels of the centre. */
 #define SCOPE_RANGE_NM           40
 
+/* Dim the backlight after dark. The T-Display's panel is plenty bright for a
+ * dark room, and full brightness overnight is glare rather than information.
+ * Sunrise/sunset are computed from the antenna position in secrets.h against
+ * NTP time; until the clock has synced over WiFi, DIM_DAY_PCT is used. */
+#define DIM_ENABLE                 1
+#define DIM_DAY_PCT              100
+#define DIM_NIGHT_PCT              50
+
+/* ---------------------------------------------------- everything above is -
+ * also editable at runtime from the HTTP control panel at http://<device
+ * ip>/, which persists changes to flash (NVS) and survives reflashing. These
+ * #defines are only the fallback used the first time the device boots, or
+ * after "reset to defaults" in the panel. See settings.h. */
+
 #endif /* SQUAWK_CONFIG_H */

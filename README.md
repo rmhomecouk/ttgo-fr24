@@ -17,7 +17,7 @@ And the same thing on the bench, in a printed case:
 
 | Overview | Nearest | Radar |
 | --- | --- | --- |
-| ![Overview page on the device](docs/photo-overview.jpg) | ![Nearest page on the device](docs/photo-nearest.jpg) | ![Radar page on the device](docs/photo-radar.jpg) |
+| ![Overview page on the device](docs/photo-overview.jpg) | ![Nearest page on the device](docs/photo-nearest.jpeg) | ![Radar page on the device](docs/photo-radar.jpg) |
 
 Three pages, changed with the two on-board buttons:
 
@@ -95,10 +95,38 @@ approximate answers.
 
 `include/secrets.h` is gitignored. Keep it that way.
 
+## Control panel
+
+The device runs a small HTTP server with a live settings and stats page —
+find it from the serial log at boot, or at `http://squawk.local/` if your
+network resolves mDNS:
+
+```
+Control panel: http://172.22.203.176 (or http://squawk.local/)
+```
+
+The top half is read-only: link status, aircraft tracked, message rate, the
+page currently showing, backlight level, and the nearest contact — polled
+every two seconds, which is plenty for numbers that change once a second at
+most. The bottom half is every setting in the table below, editable and
+saved to flash (NVS) on submit — no reflash, and the change survives a
+reboot. A stray-click-proof "reset to defaults" restores the `config.h`
+values.
+
+It's a plain [`WebServer`](https://github.com/espressif/arduino-esp32/tree/master/libraries/WebServer)
+instance, already linked in via the WiFi framework, polled rather than
+pushed over a websocket — indistinguishable at a 2-second cadence, and it
+adds no library weight on a board that's already most of the way through its
+flash. There's no authentication: anyone on the same network can change
+settings, same as the SBS-1 feed it reads from.
+
 ## Configuration
 
-Behaviour lives in [`include/config.h`](include/config.h), which is committed —
-only credentials and the antenna position are kept out of the repo.
+Everything below has a compile-time default in
+[`include/config.h`](include/config.h), which is committed — only
+credentials and the antenna position are kept out of the repo. `config.h` is
+only read once, into NVS, on a device's very first boot; after that, edit
+values from the [control panel](#control-panel) instead of reflashing.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -112,8 +140,19 @@ only credentials and the antenna position are kept out of the repo.
 | `PRIORITY_RANGE_NM` | 5.0 | Range that triggers the pin |
 | `PRIORITY_HYST_NM` | 0.5 | Dead band before the pin releases again |
 | `SCOPE_RANGE_NM` | 40 | Outer range ring on the radar page |
+| `DIM_ENABLE` | 1 | Dim the backlight after dark |
+| `DIM_DAY_PCT` | 100 | Backlight level while the sun's up |
+| `DIM_NIGHT_PCT` | 50 | Backlight level after dark |
 
-Three behaviours are worth understanding before you tune them.
+Four behaviours are worth understanding before you tune them.
+
+**The backlight follows the sun, not a clock.** Sunrise and sunset are
+computed from the antenna's lat/lon in `secrets.h` against NTP time — the
+device syncs over WiFi at boot, so it needs a network path to
+`pool.ntp.org` at least once. Until it has synced, the backlight sits at
+`DIM_DAY_PCT`; the panel's "NTP clock" stat shows whether it has. The
+transition is a hard cut at sunrise/sunset, not a fade, and it's re-checked
+every 30 seconds — the sun doesn't move fast enough to need more.
 
 **The reconnect is a half-open socket fix.** When the receiver goes away, this
 end keeps reporting `connected()` — a TCP peer's disappearance is invisible
@@ -186,10 +225,13 @@ Things worth knowing, all of them found the hard way:
 ## Layout
 
 ```
-src/ui.c        the whole UI, pure LVGL, no platform headers
-include/ui.h    the model struct the UI renders from
-src/main.cpp    WiFi, SBS-1 parsing, aircraft table, buttons, ESP32 glue
-sim/            host renderer
+src/ui.c          the whole UI, pure LVGL, no platform headers
+include/ui.h      the model struct the UI renders from
+src/main.cpp      WiFi, SBS-1 parsing, aircraft table, buttons, ESP32 glue
+src/settings.*    runtime settings, persisted to NVS
+src/suntime.*     NTP sync, sunrise/sunset, backlight PWM
+src/webpanel.*    the HTTP control panel
+sim/              host renderer
 include/lv_conf.h
 platformio.ini
 ```
