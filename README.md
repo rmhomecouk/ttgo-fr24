@@ -35,6 +35,20 @@ descending aircraft, or a 7500/7600/7700 squawk.
 `GPIO35` is input-only with no internal pull-up — it relies on the board's
 on-board one, so `pinMode(BTN_PREV, INPUT)` is deliberate.
 
+### Case
+
+Printed with [this T-Display enclosure](https://www.printables.com/model/119144-lilygo-ttgo-t-display-enclosure)
+from Printables — a two-part shell that leaves both buttons and the USB-C port
+accessible, which is all this project needs from a case.
+
+A note on what you'll see in the flesh: the T-Display is a transmissive IPS
+panel with an edge-lit backlight, so its black is really "backlight minus what
+the pixels block". The near-black `#05090C` ground reads as an uneven teal-blue
+wash on the real screen rather than the true black the renderer draws. The
+colour *values* are identical — the renderer is accurate about geometry and
+what each pixel is set to, not about how this particular panel physically
+shows black.
+
 ## Data source
 
 The receiver's SBS-1 feed on TCP port 30003: unauthenticated, plaintext CSV,
