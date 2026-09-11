@@ -3,15 +3,14 @@
 #include <TFT_eSPI.h>
 #include <lvgl.h>
 #include "secrets.h"
+#include "config.h"
 #include "ui.h"
 
 // TTGO T-Display onboard buttons
 #define BTN_NEXT 0   // top button, GPIO0
 #define BTN_PREV 35  // bottom button, GPIO35 (input-only, has on-board pull-up)
 
-#define MAX_AC 24
-#define STALE_MS 60000UL
-#define RECONNECT_MS 5000UL
+#define MAX_AC UI_MAX_AC
 
 
 struct Aircraft {
@@ -54,7 +53,7 @@ static Aircraft *findOrCreate(const char *hex) {
 static void pruneStale() {
   uint32_t now = millis();
   for (int i = 0; i < MAX_AC; i++) {
-    if (fleet[i].used && now - fleet[i].lastSeen > STALE_MS) fleet[i] = Aircraft();
+    if (fleet[i].used && now - fleet[i].lastSeen > AIRCRAFT_STALE_MS) fleet[i] = Aircraft();
   }
 }
 
@@ -152,17 +151,34 @@ static void handleLine(const String &line) {
 
 // ---------- networking ----------
 
+static uint32_t lastRxMs = 0;
+
 static void ensureFeed() {
   if (WiFi.status() != WL_CONNECTED) return;
+
+  // A half-open socket is the failure mode that needs a manual reset: the
+  // receiver goes away, but this end keeps reporting connected because it
+  // only ever reads and a dead peer is invisible until you write. Silence
+  // past the threshold is the one symptom we get, so act on it.
+  if (feed.connected() && millis() - lastRxMs > FEED_SILENCE_MS) {
+    feed.stop();
+  }
+
   if (feed.connected()) return;
+
   uint32_t now = millis();
-  if (now - lastConnectAttempt < RECONNECT_MS) return;
+  if (now - lastConnectAttempt < FEED_RECONNECT_MS) return;
   lastConnectAttempt = now;
-  feed.connect(RECEIVER_HOST, RECEIVER_PORT);
+
+  if (feed.connect(RECEIVER_HOST, RECEIVER_PORT)) {
+    lastRxMs = now;   // grace period, or the watchdog trips straight away
+    lineBuf = "";     // a reconnect must not splice onto a half-read line
+  }
 }
 
 static void pollFeed() {
   if (!feed.connected()) return;
+  if (feed.available()) lastRxMs = millis();
   while (feed.available()) {
     char c = feed.read();
     if (c == '\n') {
@@ -249,7 +265,7 @@ static void buildModel() {
   model.uptimeS = (millis() - bootMs) / 1000;
   model.msgTotal = msgCount;
   model.msgRate = rateHist[UI_RATE_N - 1];
-  model.scopeNm = 40;
+  model.scopeNm = SCOPE_RANGE_NM;
   memcpy(model.rateHist, rateHist, UI_RATE_N);
 }
 
@@ -260,6 +276,8 @@ static void buildModel() {
 
 static bool lastNext = true, lastPrev = true;
 static uint32_t lastBtnMs = 0;
+static uint32_t lastPageChange = 0;
+static uint32_t manualUntil = 0;
 
 static void handleButtons() {
   uint32_t now = millis();
@@ -267,12 +285,64 @@ static void handleButtons() {
 
   bool nextNow = digitalRead(BTN_NEXT);
   bool prevNow = digitalRead(BTN_PREV);
+  bool pressed = false;
 
-  if (lastNext && !nextNow) { ui_page_next(); lastBtnMs = now; }
-  else if (lastPrev && !prevNow) { ui_page_prev(); lastBtnMs = now; }
+  if (lastNext && !nextNow) { ui_page_next(); pressed = true; }
+  else if (lastPrev && !prevNow) { ui_page_prev(); pressed = true; }
+
+  if (pressed) {
+    lastBtnMs = now;
+    lastPageChange = now;
+    manualUntil = now + MANUAL_HOLD_MS;   // you drive for a while
+  }
 
   lastNext = nextNow;
   lastPrev = prevNow;
+}
+
+// ---------- automatic paging ----------
+
+// Reads the range buildModel() already computed rather than redoing 24
+// haversines -- this is called on the UI cadence, not every loop pass.
+static float nearestRangeNm() {
+  return model.nearest >= 0 ? model.ac[model.nearest].nm : -1.0f;
+}
+
+static void updatePaging() {
+  uint32_t now = millis();
+
+  if ((int32_t)(manualUntil - now) > 0) return;   // hands off, user is driving
+
+#if PRIORITY_ENABLE
+  // Latch onto the Nearest page while something is close, and hold it there
+  // until the contact has moved a clear margin back out -- otherwise an
+  // aircraft sitting on the boundary flaps the page every update.
+  static bool latched = false;
+  float nm = nearestRangeNm();
+
+  if (nm < 0) {
+    latched = false;
+  } else if (!latched && nm <= PRIORITY_RANGE_NM) {
+    latched = true;
+  } else if (latched && nm > PRIORITY_RANGE_NM + PRIORITY_HYST_NM) {
+    latched = false;
+  }
+
+  if (latched) {
+    if (ui_page_get() != UI_PAGE_NEAREST) {
+      ui_page_set(UI_PAGE_NEAREST, true);
+      lastPageChange = now;
+    }
+    return;
+  }
+#endif
+
+#if AUTO_CYCLE
+  if (now - lastPageChange >= PAGE_DWELL_MS) {
+    ui_page_next();
+    lastPageChange = now;
+  }
+#endif
 }
 
 // ---------- setup / loop ----------
@@ -319,6 +389,7 @@ void loop() {
   if (millis() - lastUi > 250) {
     lastUi = millis();
     buildModel();
+    updatePaging();     // needs the freshly computed nearest range
     ui_update(&model);
   }
 

@@ -98,6 +98,44 @@ approximate answers.
 
 `include/secrets.h` is gitignored. Keep it that way.
 
+## Configuration
+
+Behaviour lives in [`include/config.h`](include/config.h), which is committed —
+only credentials and the antenna position are kept out of the repo.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `FEED_SILENCE_MS` | 30 s | Reconnect if nothing arrives from the receiver for this long |
+| `FEED_RECONNECT_MS` | 5 s | Minimum gap between connection attempts |
+| `AIRCRAFT_STALE_MS` | 60 s | Drop an aircraft not heard from for this long |
+| `AUTO_CYCLE` | 1 | Cycle the pages on a timer; 0 for manual paging only |
+| `PAGE_DWELL_MS` | 10 s | How long each page is shown when cycling |
+| `MANUAL_HOLD_MS` | 30 s | Automation stands down for this long after a button press |
+| `PRIORITY_ENABLE` | 1 | Pin the Nearest page when a contact is close |
+| `PRIORITY_RANGE_NM` | 5.0 | Range that triggers the pin |
+| `PRIORITY_HYST_NM` | 0.5 | Dead band before the pin releases again |
+| `SCOPE_RANGE_NM` | 40 | Outer range ring on the radar page |
+
+Three behaviours are worth understanding before you tune them.
+
+**The reconnect is a half-open socket fix.** When the receiver goes away, this
+end keeps reporting `connected()` — a TCP peer's disappearance is invisible
+until you write to the socket, and the device only ever reads. Silence is the
+sole symptom available, so a gap longer than `FEED_SILENCE_MS` is treated as a
+dead link and the connection is torn down and rebuilt. The trade-off:
+dump1090 sends nothing at all when it is tracking no aircraft, so on a quiet
+night the link will recycle on a timer. Harmless, but raise the threshold if
+it bothers you.
+
+**Button presses win.** Any press suspends both the cycle and the proximity
+pin for `MANUAL_HOLD_MS`, so the page cannot be pulled out from under you
+while you are reading it.
+
+**The proximity pin has hysteresis.** It engages at `PRIORITY_RANGE_NM` but
+only releases at `PRIORITY_RANGE_NM + PRIORITY_HYST_NM`. Without that dead
+band an aircraft loitering on the boundary would flap the page back and forth
+every update.
+
 ## The host renderer
 
 `sim/` compiles the real LVGL against a memory framebuffer, runs the same
