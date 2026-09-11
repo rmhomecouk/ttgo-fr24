@@ -11,6 +11,17 @@ which runs the real LVGL over the same `src/ui.c` that ships to the board, so
 they are what the panel displays, pixel for pixel. The traffic is seeded
 (Loganair and easyJet being the local operators at Glasgow).
 
+And the same thing on the bench, in a printed case:
+
+![The finished display in its printed enclosure](docs/photo-cased.jpg)
+
+| Overview | Nearest | Radar |
+| --- | --- | --- |
+| ![Overview page on the device](docs/photo-overview.jpg) | ![Nearest page on the device](docs/photo-nearest.jpg) | ![Radar page on the device](docs/photo-radar.jpg) |
+
+The photographs are worth having next to the render: the panel's black is not
+black. See [Case](#case) for why.
+
 Three pages, changed with the two on-board buttons:
 
 | Page | Shows |
