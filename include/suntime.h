@@ -23,4 +23,20 @@ uint8_t suntime_backlight_pct();
  * backlight sits at DIM_DAY_PCT because sunrise/sunset can't be computed. */
 bool suntime_time_synced();
 
+/* Whether the sun-based schedule currently says it's night (regardless of
+ * whether a wake override is forcing day brightness anyway). Used to decide
+ * which of dimDayPct/dimNightPct a live brightness change should edit. */
+bool suntime_is_night();
+
+/* A button was pressed. If it's currently dark, force day brightness for
+ * five minutes so the screen is readable, then let the schedule take back
+ * over. Does nothing if dimming is off or it's already day. Call from
+ * main.cpp's button handler. */
+void suntime_wake();
+
+/* Sets the backlight to `pct` immediately and writes it into whichever of
+ * dimDayPct/dimNightPct is currently active, persisting the change -- the
+ * control panel's live brightness slider. */
+void suntime_set_live_pct(uint8_t pct);
+
 #endif /* SQUAWK_SUNTIME_H */

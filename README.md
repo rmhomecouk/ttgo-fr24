@@ -105,20 +105,35 @@ network resolves mDNS:
 Control panel: http://172.22.203.176 (or http://squawk.local/)
 ```
 
-The top half is read-only: link status, aircraft tracked, message rate, the
-page currently showing, backlight level, and the nearest contact — polled
-every two seconds, which is plenty for numbers that change once a second at
-most. The bottom half is every setting in the table below, editable and
+Most of the top half is read-only: link status, aircraft tracked, message
+rate, the page currently showing, and the nearest contact — polled every two
+seconds, which is plenty for numbers that change once a second at most. The
+one live control up there is backlight: a slider (with a paired number box)
+that sets the panel's brightness immediately, no page reload, and writes the
+value into whichever of `DIM_DAY_PCT`/`DIM_NIGHT_PCT` is in effect right
+now, so it's a real setting change, not a one-off preview.
+
+Below that is every other setting in the table further down, editable and
 saved to flash (NVS) on submit — no reflash, and the change survives a
 reboot. A stray-click-proof "reset to defaults" restores the `config.h`
 values.
+
+Last is Network: hostname, WiFi SSID, and WiFi password. Changing any of
+these restarts the device to rejoin cleanly — there's no way to swap SSIDs
+on a live connection without one — so it also asks for confirmation before
+submitting. The password field is always shown blank; leave it blank to
+keep the current one; a browser has no reason to be shown a stored secret
+back on every page load. Reconnect afterwards at the new hostname or via
+your router — the mDNS name changes too, so the old `.local` address stops
+answering the moment the new one does.
 
 It's a plain [`WebServer`](https://github.com/espressif/arduino-esp32/tree/master/libraries/WebServer)
 instance, already linked in via the WiFi framework, polled rather than
 pushed over a websocket — indistinguishable at a 2-second cadence, and it
 adds no library weight on a board that's already most of the way through its
 flash. There's no authentication: anyone on the same network can change
-settings, same as the SBS-1 feed it reads from.
+settings — including the WiFi password — same as the SBS-1 feed it reads
+from.
 
 ## Configuration
 
@@ -144,7 +159,7 @@ values from the [control panel](#control-panel) instead of reflashing.
 | `DIM_DAY_PCT` | 100 | Backlight level while the sun's up |
 | `DIM_NIGHT_PCT` | 50 | Backlight level after dark |
 
-Four behaviours are worth understanding before you tune them.
+Five behaviours are worth understanding before you tune them.
 
 **The backlight follows the sun, not a clock.** Sunrise and sunset are
 computed from the antenna's lat/lon in `secrets.h` against NTP time — the
@@ -153,6 +168,12 @@ device syncs over WiFi at boot, so it needs a network path to
 `DIM_DAY_PCT`; the panel's "NTP clock" stat shows whether it has. The
 transition is a hard cut at sunrise/sunset, not a fade, and it's re-checked
 every 30 seconds — the sun doesn't move fast enough to need more.
+
+**A button press wakes a dimmed screen.** If it's dark and you press either
+button, the backlight jumps to `DIM_DAY_PCT` for five minutes, then drops
+back to `DIM_NIGHT_PCT` on its own — the same button press that already
+suspends paging (below) covers the backlight too. It does nothing while the
+screen is already at day brightness; there's nothing to wake it into.
 
 **The reconnect is a half-open socket fix.** When the receiver goes away, this
 end keeps reporting `connected()` — a TCP peer's disappearance is invisible
@@ -229,6 +250,7 @@ src/ui.c          the whole UI, pure LVGL, no platform headers
 include/ui.h      the model struct the UI renders from
 src/main.cpp      WiFi, SBS-1 parsing, aircraft table, buttons, ESP32 glue
 src/settings.*    runtime settings, persisted to NVS
+src/netconfig.*   hostname/SSID/password, persisted separately
 src/suntime.*     NTP sync, sunrise/sunset, backlight PWM
 src/webpanel.*    the HTTP control panel
 sim/              host renderer

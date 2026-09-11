@@ -5,6 +5,7 @@
 #include "secrets.h"
 #include "config.h"
 #include "settings.h"
+#include "netconfig.h"
 #include "suntime.h"
 #include "webpanel.h"
 #include "ui.h"
@@ -297,6 +298,7 @@ static void handleButtons() {
     lastBtnMs = now;
     lastPageChange = now;
     manualUntil = now + settings.manualHoldMs;   // you drive for a while
+    suntime_wake();                              // and you can probably see the screen now
   }
 
   lastNext = nextNow;
@@ -355,6 +357,7 @@ void setup() {
   bootMs = millis();
 
   settings_load();
+  netconfig_load();
 
   pinMode(BTN_NEXT, INPUT_PULLUP);
   pinMode(BTN_PREV, INPUT);
@@ -379,7 +382,8 @@ void setup() {
   ui_page_set(UI_PAGE_OVERVIEW, false);
 
   WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  WiFi.setHostname(netConfig.hostname.c_str());   // must precede begin() to take effect
+  WiFi.begin(netConfig.ssid.c_str(), netConfig.pass.c_str());
 
   webpanel_begin();
 }

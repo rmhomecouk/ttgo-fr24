@@ -11,8 +11,10 @@ static const uint8_t  BL_CHANNEL  = 0;
 static const uint32_t BL_FREQ_HZ  = 5000;
 static const uint8_t  BL_RES_BITS = 8;
 
-static bool    ntpStarted = false;
-static uint8_t currentPct = 100;
+static bool     ntpStarted = false;
+static uint8_t  currentPct = 100;
+static bool     isNightNow = false;   // last sun-based verdict, regardless of any wake override
+static uint32_t wakeUntilMs = 0;      // button-triggered day override, 0/expired = none
 
 static double sinD(double deg) { return sin(radians(deg)); }
 static double cosD(double deg) { return cos(radians(deg)); }
@@ -71,6 +73,21 @@ bool suntime_time_synced() {
 }
 
 uint8_t suntime_backlight_pct() { return currentPct; }
+bool    suntime_is_night()      { return isNightNow; }
+
+void suntime_wake() {
+  if (!settings.dimEnable) return;
+  if (!isNightNow) return;   // already at day brightness, nothing to override
+  wakeUntilMs = millis() + 5UL * 60UL * 1000UL;
+  applyBacklightPct(settings.dimDayPct);
+}
+
+void suntime_set_live_pct(uint8_t pct) {
+  if (pct > 100) pct = 100;
+  if (isNightNow) settings.dimNightPct = pct; else settings.dimDayPct = pct;
+  settings_save();
+  applyBacklightPct(pct);
+}
 
 void suntime_update() {
   static uint32_t lastCheck = 0;
@@ -84,6 +101,12 @@ void suntime_update() {
   }
 
   if (!settings.dimEnable) { applyBacklightPct(100); return; }
+
+  // A button press during the night forces day brightness for a while --
+  // let that stand until it expires rather than immediately overriding it
+  // back to night on the next periodic check.
+  if ((int32_t)(wakeUntilMs - now) > 0) { applyBacklightPct(settings.dimDayPct); return; }
+
   if (!suntime_time_synced()) { applyBacklightPct(settings.dimDayPct); return; }
 
   time_t rawNow;
@@ -95,16 +118,15 @@ void suntime_update() {
   double sunrise = sunEventUTC(utc.tm_yday + 1, RECEIVER_LAT, RECEIVER_LON, true);
   double sunset  = sunEventUTC(utc.tm_yday + 1, RECEIVER_LAT, RECEIVER_LON, false);
 
-  bool night;
   if (isnan(sunrise) || isnan(sunset)) {
     // Sun never sets or never rises today at this latitude -- rather than
     // guess, default to full brightness.
-    night = false;
+    isNightNow = false;
   } else if (sunset > sunrise) {
-    night = (nowUTC >= sunset) || (nowUTC < sunrise);
+    isNightNow = (nowUTC >= sunset) || (nowUTC < sunrise);
   } else {
-    night = (nowUTC >= sunset) && (nowUTC < sunrise);
+    isNightNow = (nowUTC >= sunset) && (nowUTC < sunrise);
   }
 
-  applyBacklightPct(night ? settings.dimNightPct : settings.dimDayPct);
+  applyBacklightPct(isNightNow ? settings.dimNightPct : settings.dimDayPct);
 }
