@@ -3,6 +3,14 @@
 An ADS-B traffic display for the LilyGO/TTGO T-Display (ESP32 + 240×135 ST7789),
 driven by a local dump1090 / readsb receiver over the SBS-1 BaseStation feed.
 
+![The three pages: Overview, Nearest and Radar](docs/pages.png)
+
+Each panel above is one full screen at 240×135, shown at 3×. These are not
+photographs or drawings — they come straight out of [the host renderer](#the-host-renderer),
+which runs the real LVGL over the same `src/ui.c` that ships to the board, so
+they are what the panel displays, pixel for pixel. The traffic is seeded
+(Loganair and easyJet being the local operators at Glasgow).
+
 Three pages, changed with the two on-board buttons:
 
 | Page | Shows |
