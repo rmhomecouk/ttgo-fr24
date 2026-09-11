@@ -1,0 +1,16 @@
+# Real credentials and antenna position -- never commit.
+# Copy include/secrets.h.example to include/secrets.h and fill it in.
+include/secrets.h
+
+# PlatformIO build output and the project-local venv it runs from
+.pio/
+.pio-venv/
+
+# Host renderer output
+sim/out/
+*.bmp
+
+.DS_Store
+
+# superseded HTML mockup, kept locally only
+mockups/
