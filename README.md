@@ -118,7 +118,7 @@ saved to flash (NVS) on submit — no reflash, and the change survives a
 reboot. A stray-click-proof "reset to defaults" restores the `config.h`
 values.
 
-Last is Network: hostname, WiFi SSID, and WiFi password. Changing any of
+Next is Network: hostname, WiFi SSID, and WiFi password. Changing any of
 these restarts the device to rejoin cleanly — there's no way to swap SSIDs
 on a live connection without one — so it also asks for confirmation before
 submitting. The password field is always shown blank; leave it blank to
@@ -127,13 +127,25 @@ back on every page load. Reconnect afterwards at the new hostname or via
 your router — the mDNS name changes too, so the old `.local` address stops
 answering the moment the new one does.
 
+Last is Firmware: pick the `.bin` from `pio run` (`.pio/build/ttgo-t-display/firmware.bin`)
+and it flashes over WiFi, progress bar and all — no cable, no PlatformIO on
+whatever machine you're stood next to. This board's default partition table
+already gives the app two 1.31MB slots rather than one (that's what the
+"Flash: xx% of 1,310,720 bytes" figure earlier has been describing all
+along), and the upload writes into whichever one isn't currently running.
+So a bad file or a dropped connection just leaves that spare slot
+half-written — the device notices the image never validated, says so, and
+carries on booting what it already had. Nothing to lose in one attempt but
+the attempt. Verified round-trip on the actual hardware, including the
+reject-and-carry-on path with a deliberately bad file.
+
 It's a plain [`WebServer`](https://github.com/espressif/arduino-esp32/tree/master/libraries/WebServer)
 instance, already linked in via the WiFi framework, polled rather than
 pushed over a websocket — indistinguishable at a 2-second cadence, and it
 adds no library weight on a board that's already most of the way through its
 flash. There's no authentication: anyone on the same network can change
-settings — including the WiFi password — same as the SBS-1 feed it reads
-from.
+settings, read the WiFi password, or push new firmware — same as the SBS-1
+feed it reads from, just with higher stakes.
 
 ## Configuration
 

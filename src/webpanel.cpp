@@ -2,6 +2,7 @@
 #include <WebServer.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
+#include <Update.h>
 #include "settings.h"
 #include "netconfig.h"
 #include "suntime.h"
@@ -65,6 +66,9 @@ static const char PAGE_HEAD[] =
   "padding:10px 18px;font-weight:600;font-size:14px;cursor:pointer;margin-top:18px}"
   "button.reset{background:transparent;color:var(--amber);"
   "border:1px solid var(--amber);margin-left:10px}"
+  "input[type=file]{color:var(--fg)}"
+  "#otaProgress{display:none;align-items:center;gap:10px;margin-top:14px}"
+  "#otaProgress progress{flex:1;accent-color:var(--cyan)}"
   "a{color:var(--cyan)}"
   "</style></head><body>"
   "<h1>ttgo-fr24</h1><p class='sub'>ADS-B display control panel</p>";
@@ -103,6 +107,31 @@ static const char STATS_SCRIPT[] =
   "bri.value=s.backlightPct;briBox.value=s.backlightPct;}"
   "}).catch(()=>{});}"
   "poll();setInterval(poll,2000);"
+  "var otaForm=document.getElementById('otaForm');"
+  "otaForm.addEventListener('submit',function(e){"
+  "e.preventDefault();"
+  "var f=document.getElementById('otaFile').files[0];"
+  "if(!f){alert('Choose a .bin file first');return;}"
+  "if(!/\\.bin$/i.test(f.name)){"
+  "if(!confirm(f.name+\" doesn't look like a .bin -- upload it anyway?\"))return;"
+  "}else if(!confirm('Flash '+f.name+' ('+Math.round(f.size/1024)+' KB) and restart the device?')){"
+  "return;}"
+  "var fd=new FormData();fd.append('firmware',f);"
+  "var wrap=document.getElementById('otaProgress'),"
+  "bar=document.getElementById('otaBar'),pct=document.getElementById('otaPct');"
+  "wrap.style.display='flex';pct.textContent='0%';"
+  "var xhr=new XMLHttpRequest();"
+  "xhr.upload.onprogress=function(ev){"
+  "if(ev.lengthComputable){var p=Math.round(ev.loaded/ev.total*100);"
+  "bar.value=p;pct.textContent=p+'%';}};"
+  "xhr.onload=function(){"
+  "if(xhr.status===200&&xhr.responseText.indexOf('ok')===0){"
+  "pct.textContent='Flashed -- restarting...';"
+  "setTimeout(function(){location.reload();},8000);"
+  "}else{pct.textContent='Failed: '+xhr.responseText;}};"
+  "xhr.onerror=function(){pct.textContent='Upload failed (connection lost)';};"
+  "xhr.open('POST','/update');xhr.send(fd);"
+  "});"
   "</script>";
 
 // ---------- form field helpers ----------
@@ -225,6 +254,17 @@ static void handleIndex() {
   h += "<button type='submit'>Save &amp; restart</button>";
   h += "</form>";
 
+  h += "<h2>Firmware</h2>";
+  h += "<form id='otaForm' method='POST' action='/update' enctype='multipart/form-data'>";
+  h += "<div class='row'><label for='otaFile'>Upload .bin"
+       "<span class='hint'>Built with <code>pio run</code>, at "
+       "<code>.pio/build/ttgo-t-display/firmware.bin</code></span></label>"
+       "<input type='file' id='otaFile' name='firmware' accept='.bin'></div>";
+  h += "<div id='otaProgress'><progress id='otaBar' value='0' max='100'></progress>"
+       "<span id='otaPct'></span></div>";
+  h += "<button type='submit'>Upload &amp; flash</button>";
+  h += "</form>";
+
   h += STATS_SCRIPT;
   h += PAGE_FOOT;
   server.send(200, "text/html", h);
@@ -302,6 +342,49 @@ static void handleSetBrightness() {
   server.send(200, "text/plain", "ok");
 }
 
+// The ESP32 OTA partition table gives this board two app slots (see the
+// "Flash: xx% of 1,310,720 bytes" figure -- that's one slot's size); Update
+// writes into whichever one isn't currently running, so a failed or
+// interrupted upload just leaves that spare slot half-written and the
+// device carries on booting the firmware it already had.
+static bool otaBeganOk = false;
+
+static void handleUpdateUpload() {
+  HTTPUpload &upload = server.upload();
+  if (upload.status == UPLOAD_FILE_START) {
+    Serial.printf("OTA: receiving %s\n", upload.filename.c_str());
+    otaBeganOk = Update.begin(UPDATE_SIZE_UNKNOWN);
+    if (!otaBeganOk) Update.printError(Serial);
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    if (otaBeganOk && Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+      Update.printError(Serial);
+      otaBeganOk = false;
+    }
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (otaBeganOk && !Update.end(true)) {
+      Update.printError(Serial);
+      otaBeganOk = false;
+    }
+    Serial.printf("OTA: %s, %u bytes\n", otaBeganOk ? "ok" : "failed", upload.totalSize);
+  } else if (upload.status == UPLOAD_FILE_ABORTED) {
+    Update.abort();
+    otaBeganOk = false;
+  }
+}
+
+static void handleUpdateComplete() {
+  bool ok = otaBeganOk && !Update.hasError();
+  server.sendHeader("Connection", "close");
+  if (ok) {
+    server.send(200, "text/plain", "ok");
+    server.client().flush();
+    delay(500);
+    ESP.restart();
+  } else {
+    server.send(200, "text/plain", "not a valid image, or the upload was interrupted");
+  }
+}
+
 static void handleStats() {
   String j = "{";
   j += "\"uptimeS\":" + String(model.uptimeS) + ",";
@@ -334,6 +417,7 @@ void webpanel_begin() {
   server.on("/save-network", HTTP_POST, handleSaveNetwork);
   server.on("/api/stats", HTTP_GET, handleStats);
   server.on("/api/brightness", HTTP_POST, handleSetBrightness);
+  server.on("/update", HTTP_POST, handleUpdateComplete, handleUpdateUpload);
   server.begin();
 }
 
