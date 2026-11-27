@@ -19,15 +19,15 @@
 
 /* ------------------------------------------------------------------ theme */
 
-#define C_BG      lv_color_hex(0x05090C)
-#define C_LINE    lv_color_hex(0x1E2E3A)
-#define C_TICK    lv_color_hex(0x1C4450)
-#define C_DIM     lv_color_hex(0x64808F)
-#define C_TEXT    lv_color_hex(0xE4EEF5)
-#define C_CYAN    lv_color_hex(0x2FD4E8)
-#define C_MAGENTA lv_color_hex(0xF05BC8)
-#define C_GREEN   lv_color_hex(0x57E07A)
-#define C_AMBER   lv_color_hex(0xF5A524)
+#define C_BG      lv_color_hex(0x0E1424)   /* Dusk ground   */
+#define C_LINE    lv_color_hex(0x27314F)   /* Dusk line     */
+#define C_TICK    lv_color_hex(0x3A4670)
+#define C_DIM     lv_color_hex(0x9AA4C2)   /* Dusk dim      */
+#define C_TEXT    lv_color_hex(0xEEF1FA)   /* Dusk text     */
+#define C_CYAN    lv_color_hex(0x8FA8FF)   /* Dusk accent (periwinkle; name kept for data colour) */
+#define C_MAGENTA lv_color_hex(0xF58FD6)   /* selected target */
+#define C_GREEN   lv_color_hex(0x5EE6C0)   /* Dusk mint: other traffic / link ok */
+#define C_AMBER   lv_color_hex(0xF5B14A)   /* caution, unchanged semantics */
 
 #define F12 &lv_font_montserrat_12
 #define F16 &lv_font_montserrat_16
